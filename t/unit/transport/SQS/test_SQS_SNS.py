@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import logging
 from datetime import datetime, timedelta, timezone
-from unittest.mock import Mock, call, patch
+from unittest.mock import MagicMock, Mock, call, patch
 
 import pytest
 
@@ -519,6 +519,20 @@ class test_SNS:
             )
         ]
 
+    def test_handle_getting_topic_arn_for_predefined_exchanges_double_lock_check(self, sns_fanout):
+        # Arrange
+        exchange = "test-exchange"
+        sns_fanout._topic_arn_cache = {exchange: "cached-subscription-arn"}
+        sns_fanout.channel.predefined_exchanges = MagicMock()
+        sns_fanout.channel.predefined_exchanges.get.side_effect = AssertionError("This should not be called")
+
+        # Act
+        result = sns_fanout._handle_getting_topic_arn_for_predefined_exchanges(exchange)
+
+        # Assert
+        assert result == "cached-subscription-arn"
+        assert sns_fanout.channel.predefined_exchanges.get.call_count == 0
+
 
 class test_SnsSubscription:
     @pytest.fixture
@@ -544,6 +558,11 @@ class test_SnsSubscription:
     @pytest.fixture
     def mock_subscribe_queue_to_sns_topic(self, sns_subscription):
         with patch.object(sns_subscription, "_subscribe_queue_to_sns_topic") as mock:
+            yield mock
+
+    @pytest.fixture
+    def mock_get_queue_attributes(self, sns_subscription):
+        with patch.object(sns_subscription, "_get_queue_attributes") as mock:
             yield mock
 
     def test_subscribe_queue_already_subscribed(
@@ -604,6 +623,23 @@ class test_SnsSubscription:
         assert mock_set_permission_on_sqs_queue.call_args_list == [
             call(topic_arn=topic_arn, queue_arn=queue_arn, queue_name=queue_name)
         ]
+
+
+    def test_create_subscription_double_lock_check(self, sns_subscription, sns_fanout, caplog, mock_subscribe_queue_to_sns_topic):
+        # Arrange
+        caplog.set_level(logging.DEBUG)
+
+        queue_arn = "arn:aws:sqs:us-west-2:123456789012:my-queue"
+        exchange = "test-exchange"
+        sns_subscription._subscription_arn_cache = MagicMock()
+        sns_subscription._subscription_arn_cache.get.side_effect=[None, "cached-subscription-arn"]
+
+        # Act
+        result = sns_subscription.subscribe_queue(queue_arn, exchange)
+
+        # Assert
+        assert result == "cached-subscription-arn"
+        assert mock_subscribe_queue_to_sns_topic.call_count == 0
 
     def test_unsubscribe_queue_not_in_cache(
         self,
@@ -828,6 +864,9 @@ class test_SnsSubscription:
             f"Create subscription '{subscription_arn}' for SQS queue '{queue_arn}' to SNS topic '{topic_arn}'"
             in caplog.text
         )
+
+
+
 
     def test_subscribe_queue_to_sns_topic_subscription_failure(
         self, sns_subscription, sns_fanout

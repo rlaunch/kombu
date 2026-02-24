@@ -2,20 +2,22 @@
 
 from __future__ import annotations
 
+from kombu.exceptions import KombuError
 
-class UndefinedQueueException(Exception):
+
+class UndefinedQueueException(KombuError):
     """Predefined queues are being used and an undefined queue was used."""
 
 
-class UndefinedExchangeException(Exception):
+class UndefinedExchangeException(KombuError):
     """Predefined exchanges are being used and an undefined exchange/SNS topic was used."""
 
 
-class InvalidQueueException(Exception):
+class InvalidQueueException(KombuError):
     """Predefined queues are being used and configuration is not valid."""
 
 
-class AccessDeniedQueueException(Exception):
+class AccessDeniedQueueException(KombuError):
     """Raised when access to the AWS queue is denied.
 
     This may occur if the permissions are not correctly set or the
@@ -23,5 +25,5 @@ class AccessDeniedQueueException(Exception):
     """
 
 
-class DoesNotExistQueueException(Exception):
+class DoesNotExistQueueException(KombuError):
     """The specified queue doesn't exist."""

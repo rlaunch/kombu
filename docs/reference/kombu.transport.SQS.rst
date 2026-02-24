@@ -84,7 +84,7 @@ consumer resources, which can happen with standard queues that handle multi-tena
 workloads with unbalanced message distribution.
 
 When publishing messages to a Fair Queue, you should provide a `MessageGroupId`. This can be done by passing it as a
-keyword argument to the `publish` method. While the Kombu implementation only sends `MessageGroupId` if it is present, 
+keyword argument to the `publish` method. While the Kombu implementation only sends `MessageGroupId` if it is present,
 AWS requires it for FIFO and Fair Queues. If omitted, (a) FIFO: Kombu will assign a default group id,
 (b) standard fair queues: group id is needed to get fairness but omission shouldn't imply AWS rejection.
 Example:
@@ -113,10 +113,10 @@ Amazon SQS Transport - ``kombu.transport.SQS.exceptions``
    :undoc-members:
 
 
-Amazon SQS Transport - ``kombu.transport.SQS.SNS``
+Amazon SQS Transport - ``kombu.transport.SQS.sns``
 ================================================
 
-.. automodule:: kombu.transport.SQS.SNS
+.. automodule:: kombu.transport.SQS.sns
    :members:
    :show-inheritance:
    :undoc-members:

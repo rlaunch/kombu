@@ -55,19 +55,19 @@ class SNS:
         # Clear any old subscriptions
         self.subscriptions.cleanup(exchange_name)
 
-        # If topic has already been initialised, then do nothing
-        if self._topic_arn_cache.get(exchange_name):
-            return None
-
-        # If predefined_exchanges are set, then do not try to create an SNS topic
-        if self.channel.predefined_exchanges:
-            logger.debug(
-                "'predefined_exchanges' has been specified, so SNS topics will"
-                " not be created."
-            )
-            return
-
         with self._lock:
+            # If topic has already been initialised, then do nothing
+            if self._topic_arn_cache.get(exchange_name):
+                return None
+
+            # If predefined_exchanges are set, then do not try to create an SNS topic
+            if self.channel.predefined_exchanges:
+                logger.debug(
+                    "'predefined_exchanges' has been specified, so SNS topics will"
+                    " not be created."
+                )
+                return
+
             # Create the topic and cache the ARN
             self._topic_arn_cache[exchange_name] = self._create_sns_topic(exchange_name)
             return None
@@ -76,8 +76,8 @@ class SNS:
         self,
         exchange_name: str,
         message: str,
-        message_attributes: dict = None,
-        request_params: dict = None,
+        message_attributes: dict | None = None,
+        request_params: dict | None = None,
     ) -> None:
         """Send a notification to AWS Simple Notification Service (SNS).
 
@@ -121,18 +121,7 @@ class SNS:
 
         # If predefined-exchanges are used, then do not create a new topic and raise an exception
         if self.channel.predefined_exchanges:
-            with self._lock:
-                # Try and get the topic ARN from the predefined_exchanges and add it to the cache
-                topic_arn = self._topic_arn_cache[exchange_name] = (
-                    self.channel.predefined_exchanges.get(exchange_name, {}).get("arn")
-                )
-                if topic_arn:
-                    return topic_arn
-
-            # If pre-defined exchanges do not have the exchange, then raise an exception
-            raise UndefinedExchangeException(
-                f"Exchange with name '{exchange_name}' must be defined in 'predefined_exchanges'."
-            )
+            return self._handle_getting_topic_arn_for_predefined_exchanges(exchange_name)
 
         # If predefined_caches are not used, then create a new SNS topic/retrieve the ARN from AWS SNS and cache it
         with self._lock:
@@ -140,6 +129,28 @@ class SNS:
                 exchange_name
             )
             return arn
+
+    def _handle_getting_topic_arn_for_predefined_exchanges(self, exchange_name: str) -> str:
+        """Handles getting the topic ARN for predefined exchanges.
+
+        :param exchange_name: The exchange name to get the topic ARN for
+        :return: The SNS topic ARN for the exchange
+        :raises UndefinedExchangeException: If the exchange is not defined in the predefined_exchanges
+        """
+        with self._lock:
+            if topic_arn := self._topic_arn_cache.get(exchange_name):
+                return topic_arn
+
+            topic_arn = self._topic_arn_cache[exchange_name] = (
+                self.channel.predefined_exchanges.get(exchange_name, {}).get("arn")
+            )
+            if topic_arn:
+                return topic_arn
+
+        # If pre-defined exchanges do not have the exchange, then raise an exception
+        raise UndefinedExchangeException(
+            f"Exchange with name '{exchange_name}' must be defined in 'predefined_exchanges'."
+        )
 
     def _create_sns_topic(self, exchange_name: str) -> str:
         """Creates an AWS SNS topic.
@@ -178,7 +189,7 @@ class SNS:
         return arn
 
     @staticmethod
-    def serialise_message_attributes(message_attributes: dict) -> dict:
+    def serialise_message_attributes(message_attributes: dict | None) -> dict:
         """Serialises SQS message attributes into SNS format.
 
         :param message_attributes: A dictionary of message attributes
@@ -311,13 +322,11 @@ class SNS:
 
 
 class _SnsSubscription:
-    _queue_arn_cache: dict[str, str] = {}  # SQS queue URL => Queue ARN
-    _subscription_arn_cache: dict[str, str] = {}  # Queue => Subscription ARN
-
-    _lock = threading.Lock()
-
     def __init__(self, sns_fanout: SNS):
         self.sns = sns_fanout
+        self._queue_arn_cache: dict[str, str] = {}  # SQS queue URL => Queue ARN
+        self._subscription_arn_cache: dict[str, str] = {}  # Queue => Subscription ARN
+        self._lock = threading.Lock()
 
     def subscribe_queue(self, queue_name: str, exchange_name: str) -> str:
         """Subscribes a queue to an AWS SNS topic.
@@ -327,29 +336,45 @@ class _SnsSubscription:
         :raises: UndefinedExchangeException if exchange is not defined.
         :return: The subscription ARN
         """
-        # Get exchange from Queue and raise if not defined
         cache_key = f"{exchange_name}:{queue_name}"
 
         # If the subscription ARN is already cached, return it
         if subscription_arn := self._subscription_arn_cache.get(cache_key):
             return subscription_arn
 
-        # Get ARNs for queue and topic
-        queue_arn = self._get_queue_arn(queue_name)
-        topic_arn = self.sns._get_topic_arn(exchange_name)
-
-        # Subscribe the SQS queue to the SNS topic
-        subscription_arn = self._subscribe_queue_to_sns_topic(
-            queue_arn=queue_arn, topic_arn=topic_arn
+        return self._handle_create_new_subscription_for_predefined_exchanges(
+            cache_key=cache_key, queue_name=queue_name, exchange_name=exchange_name
         )
 
-        # Setup permissions for the queue to receive messages from the topic
-        self._set_permission_on_sqs_queue(
-            topic_arn=topic_arn, queue_arn=queue_arn, queue_name=queue_name
-        )
+    def _handle_create_new_subscription_for_predefined_exchanges(
+        self, cache_key: str, queue_name: str, exchange_name: str
+    ) -> str:
+        """Handles creating a new subscription for predefined exchanges.
 
-        # Update subscription ARN cache
+        :param cache_key: The cache key for the subscription ARN cache
+        :param queue_name: The queue to subscribe
+        :param exchange_name: The exchange to subscribe to the queue
+        :raises UndefinedExchangeException: If the exchange is not defined in the predefined_exchanges
+        """
         with self._lock:
+            if subscription_arn := self._subscription_arn_cache.get(cache_key):
+                return subscription_arn
+
+            # Get ARNs for queue and topic
+            queue_arn = self._get_queue_arn(queue_name)
+            topic_arn = self.sns._get_topic_arn(exchange_name)
+
+            # Subscribe the SQS queue to the SNS topic
+            subscription_arn = self._subscribe_queue_to_sns_topic(
+                queue_arn=queue_arn, topic_arn=topic_arn
+            )
+
+            # Setup permissions for the queue to receive messages from the topic
+            self._set_permission_on_sqs_queue(
+                topic_arn=topic_arn, queue_arn=queue_arn, queue_name=queue_name
+            )
+
+            # Update subscription ARN cache
             self._subscription_arn_cache[cache_key] = subscription_arn
 
         return subscription_arn
@@ -519,7 +544,9 @@ class _SnsSubscription:
             if not subscription.get("Protocol", "").lower() == "sqs":
                 continue
 
-            # Extract the SQS queue ARN from the subscription endpoint
+            # Extract the SQS queue ARN from the subscription endpoint.
+            # SNS SQS subscriptions are formatted like arn:aws:sqs:region:account_id:queue_name,
+            #  so the queue name is the last element after splitting by ":"
             queue_name = subscription["Endpoint"].split(":")[-1]
 
             # Check if the queue has been removed by calling the get queue URL method.
@@ -546,24 +573,28 @@ class _SnsSubscription:
 
         :param queue_name: The queue to get the ARN for
         """
-        # Check if the queue ARN is already cached, and return if it exists
         if arn := self._queue_arn_cache.get(queue_name):
             return arn
 
         queue_url = self.sns.channel._resolve_queue_url(queue_name)
-
-        # Get the ARN for the SQS queue
-        response = self.sns.channel.sqs().get_queue_attributes(
-            QueueUrl=queue_url, AttributeNames=["QueueArn"]
-        )
-        if (status_code := response["ResponseMetadata"]["HTTPStatusCode"]) != 200:
-            raise KombuError(
-                f"Unable to get ARN for SQS queue '{queue_name}': "
-                f"status code was '{status_code}'"
-            )
-
-        # Update queue ARN cache
-        with self._lock:
-            arn = self._queue_arn_cache[queue_name] = response["Attributes"]["QueueArn"]
-
+        queue_attrs = self._get_queue_attributes(queue_name, queue_url)
+        arn = self._queue_arn_cache[queue_name] = queue_attrs["Attributes"]["QueueArn"]
         return arn
+
+    def _get_queue_attributes(self, queue_name: str, queue_url: str) -> dict:
+        """Gets the attributes of the SQS queue.
+
+        :param queue_name: The queue to get the attributes for
+        :param queue_url: The URL of the queue to get the attributes for
+        :return: The attributes of the queue
+        :raises: KombuError if the attributes cannot be retrieved
+        """
+        response = self.sns.channel.sqs().get_queue_attributes(
+                QueueUrl=queue_url, AttributeNames=["QueueArn"]
+            )
+        if (status_code := response["ResponseMetadata"]["HTTPStatusCode"]) == 200:
+            return response
+
+        raise KombuError(
+            f"Unable to get ARN for SQS queue '{queue_name}': status code was '{status_code}'"
+        )
