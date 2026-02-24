@@ -624,15 +624,14 @@ class test_SnsSubscription:
             call(topic_arn=topic_arn, queue_arn=queue_arn, queue_name=queue_name)
         ]
 
-
-    def test_create_subscription_double_lock_check(self, sns_subscription, sns_fanout, caplog, mock_subscribe_queue_to_sns_topic):
+    def test_create_subscription_double_lock_check(
+        self, sns_subscription, mock_subscribe_queue_to_sns_topic
+    ):
         # Arrange
-        caplog.set_level(logging.DEBUG)
-
         queue_arn = "arn:aws:sqs:us-west-2:123456789012:my-queue"
         exchange = "test-exchange"
         sns_subscription._subscription_arn_cache = MagicMock()
-        sns_subscription._subscription_arn_cache.get.side_effect=[None, "cached-subscription-arn"]
+        sns_subscription._subscription_arn_cache.get.side_effect = [None, "cached-subscription-arn"]
 
         # Act
         result = sns_subscription.subscribe_queue(queue_arn, exchange)
@@ -864,9 +863,6 @@ class test_SnsSubscription:
             f"Create subscription '{subscription_arn}' for SQS queue '{queue_arn}' to SNS topic '{topic_arn}'"
             in caplog.text
         )
-
-
-
 
     def test_subscribe_queue_to_sns_topic_subscription_failure(
         self, sns_subscription, sns_fanout
