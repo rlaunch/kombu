@@ -555,7 +555,7 @@ class _SnsSubscription:
         logger.debug(f"Set permissions on SNS topic '{topic_arn}'")
 
     @staticmethod
-    def _get_exisiting_queue_policy(sqs_client, queue_name: str, queue_url: str) -> dict:
+    def _get_existing_queue_policy(sqs_client, queue_name: str, queue_url: str) -> dict:
         """Retrieves the existing SQS queue policy.
 
         We retrieve the existing policy so that we can add a statement for the SNS topic
