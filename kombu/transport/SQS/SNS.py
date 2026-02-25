@@ -509,7 +509,8 @@ class _SnsSubscription:
         new_policy = existing_policy.copy()
 
         new_policy.setdefault("Version", "2012-10-17")
-        statements = new_policy.get("Statement") or []
+        existing_statements = new_policy.get("Statement") or []
+        statements = list(existing_statements)
 
         kombu_statement = {
             "Sid":       "KombuManaged",
