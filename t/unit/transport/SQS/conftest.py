@@ -12,7 +12,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from kombu import Connection
-from kombu.transport.SQS.sns import SNS, _SnsSubscription
+from kombu.transport.SQS.SNS import SNS, _SnsSubscription
 
 boto3 = pytest.importorskip('boto3')
 

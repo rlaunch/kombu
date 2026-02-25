@@ -113,10 +113,10 @@ Amazon SQS Transport - ``kombu.transport.SQS.exceptions``
    :undoc-members:
 
 
-Amazon SQS Transport - ``kombu.transport.SQS.sns``
+Amazon SQS Transport - ``kombu.transport.SQS.SNS``
 ================================================
 
-.. automodule:: kombu.transport.SQS.sns
+.. automodule:: kombu.transport.SQS.SNS
    :members:
    :show-inheritance:
    :undoc-members:
