@@ -387,15 +387,19 @@ class _SnsSubscription:
         :return: None
         """
         cache_key = f"{exchange_name}:{queue_name}"
-        # Get subscription ARN from cache if it exists, and return if it exists
+        # Get subscription ARN from cache if it exists, and return if it does not exist
         if not (subscription_arn := self._subscription_arn_cache.get(cache_key)):
             return
 
-        # Unsubscribe the SQS queue from the SNS topic
-        self._unsubscribe_sns_subscription(subscription_arn)
-        logger.info(
-            f"Unsubscribed subscription '{subscription_arn}' for SQS queue '{queue_name}'"
-        )
+        # Unsubscribe the SQS queue from the SNS topic and invalidate the cache entry
+        try:
+            self._unsubscribe_sns_subscription(subscription_arn)
+            logger.info(
+                f"Unsubscribed subscription '{subscription_arn}' for SQS queue '{queue_name}'"
+            )
+        finally:
+            # Remove the cached subscription ARN so future subscribe calls don't use a stale value
+            self._subscription_arn_cache.pop(cache_key, None)
 
     def cleanup(self, exchange_name: str) -> None:
         """Removes any stale SNS topic subscriptions.
