@@ -475,24 +475,69 @@ class _SnsSubscription:
         :param queue_arn: The ARN of the SQS queue
         :return: None
         """
-        self.sns.channel.sqs().set_queue_attributes(
-            QueueUrl=self.sns.channel._resolve_queue_url(queue_name),
+        sqs_client = self.sns.channel.sqs()
+        queue_url = self.sns.channel._resolve_queue_url(queue_name)
+
+        # Retrieve existing policy so we don't overwrite user-managed statements.
+        policy_doc: dict
+        try:
+            attrs = sqs_client.get_queue_attributes(
+                QueueUrl=queue_url,
+                AttributeNames=["Policy"],
+            ).get("Attributes", {})
+            existing_policy = attrs.get("Policy")
+            if existing_policy:
+                try:
+                    policy_doc = json.loads(existing_policy)
+                except (TypeError, ValueError):
+                    # Fall back to a fresh policy if the existing one is malformed.
+                    policy_doc = {}
+            else:
+                policy_doc = {}
+        except ClientError as exc:
+            # If we cannot retrieve the existing policy, log and start with a fresh one.
+            logger.warning(
+                "Unable to retrieve existing SQS policy for queue '%s': %s",
+                queue_name,
+                exc,
+            )
+            policy_doc = {}
+
+        # Ensure required top-level keys.
+        if not isinstance(policy_doc, dict):
+            policy_doc = {}
+        policy_doc.setdefault("Version", "2012-10-17")
+
+        statements = policy_doc.get("Statement") or []
+        if not isinstance(statements, list):
+            statements = [statements]
+
+        kombu_statement = {
+            "Sid":       "KombuManaged",
+            "Effect":    "Allow",
+            "Principal": {"Service": "sns.amazonaws.com"},
+            "Action":    "SQS:SendMessage",
+            "Resource":  queue_arn,
+            "Condition": {"ArnLike": {"aws:SourceArn": topic_arn}},
+        }
+
+        # Upsert the Kombu-managed statement by Sid.
+        updated = False
+        for index, stmt in enumerate(statements):
+            if isinstance(stmt, dict) and stmt.get("Sid") == "KombuManaged":
+                statements[index] = kombu_statement
+                updated = True
+                break
+
+        if not updated:
+            statements.append(kombu_statement)
+
+        policy_doc["Statement"] = statements
+
+        sqs_client.set_queue_attributes(
+            QueueUrl=queue_url,
             Attributes={
-                "Policy": json.dumps(
-                    {
-                        "Version":   "2012-10-17",
-                        "Statement": [
-                            {
-                                "Sid":       "KombuManaged",
-                                "Effect":    "Allow",
-                                "Principal": {"Service": "sns.amazonaws.com"},
-                                "Action":    "SQS:SendMessage",
-                                "Resource":  queue_arn,
-                                "Condition": {"ArnLike": {"aws:SourceArn": topic_arn}},
-                            }
-                        ],
-                    }
-                )
+                "Policy": json.dumps(policy_doc),
             },
         )
         logger.debug(f"Set permissions on SNS topic '{topic_arn}'")
