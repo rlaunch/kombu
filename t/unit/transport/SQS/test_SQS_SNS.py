@@ -825,7 +825,7 @@ class test_SnsSubscription:
                    "Set permissions on SNS topic 'arn:aws:sns:us-east-1:123456789012:my-topic'"
                ) in caplog.text
 
-    def test_get_exisiting_queue_policy_with_existing_policy(
+    def test_get_existing_queue_policy_with_existing_policy(
         self, sns_subscription
     ):
         # Arrange
@@ -853,7 +853,7 @@ class test_SnsSubscription:
         }
 
         # Act
-        result = sns_subscription._get_exisiting_queue_policy(sqs_client_mock, queue_name, queue_url)
+        result = sns_subscription._get_existing_queue_policy(sqs_client_mock, queue_name, queue_url)
 
         # Assert
         expected_policy = {
@@ -874,7 +874,7 @@ class test_SnsSubscription:
             call(QueueUrl=queue_url, AttributeNames=["Policy"])
         ]
 
-    def test_get_exisiting_queue_policy_with_no_existing_policy(
+    def test_get_existing_queue_policy_with_no_existing_policy(
         self, sns_subscription
     ):
         # Arrange
@@ -889,12 +889,12 @@ class test_SnsSubscription:
         }
 
         # Act
-        result = sns_subscription._get_exisiting_queue_policy(sqs_client_mock, queue_name, queue_url)
+        result = sns_subscription._get_existing_queue_policy(sqs_client_mock, queue_name, queue_url)
 
         # Assert
         assert result == {}
 
-    def test_get_exisiting_queue_policy_with_invalid_policy(
+    def test_get_existing_queue_policy_with_invalid_policy(
         self, sns_subscription, caplog
     ):
         # Arrange
@@ -911,13 +911,13 @@ class test_SnsSubscription:
         }
 
         # Act
-        result = sns_subscription._get_exisiting_queue_policy(sqs_client_mock, queue_name, queue_url)
+        result = sns_subscription._get_existing_queue_policy(sqs_client_mock, queue_name, queue_url)
 
         # Assert
         assert result == {}
         assert f"Existing SQS policy for queue '{queue_name}' is malformed:" in caplog.text
 
-    def test_get_exisiting_queue_policy_client_error(
+    def test_get_existing_queue_policy_client_error(
         self, sns_subscription, caplog
     ):
         # Arrange
@@ -931,7 +931,7 @@ class test_SnsSubscription:
         )
 
         # Act
-        result = sns_subscription._get_exisiting_queue_policy(sqs_client_mock, queue_name, queue_url)
+        result = sns_subscription._get_existing_queue_policy(sqs_client_mock, queue_name, queue_url)
 
         # Assert
         assert result == {}

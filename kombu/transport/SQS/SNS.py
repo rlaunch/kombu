@@ -7,6 +7,7 @@ of these topics.
 """
 from __future__ import annotations
 
+import copy
 import json
 import threading
 from datetime import datetime
@@ -483,7 +484,7 @@ class _SnsSubscription:
         sqs_client = self.sns.channel.sqs()
         queue_url = self.sns.channel._resolve_queue_url(queue_name)
 
-        existing_policy = self._get_exisiting_queue_policy(sqs_client, queue_name, queue_url)
+        existing_policy = self._get_existing_queue_policy(sqs_client, queue_name, queue_url)
         new_policy = self._generate_new_sqs_policy(existing_policy, topic_arn, queue_arn)
 
         self._set_policy_on_sqs_queue(
@@ -506,7 +507,7 @@ class _SnsSubscription:
         :param queue_arn: The ARN of the SQS queue
         :return: The updated policy with the new statement added
         """
-        new_policy = existing_policy.copy()
+        new_policy = copy.deepcopy(existing_policy)
 
         new_policy.setdefault("Version", "2012-10-17")
         statements = new_policy.get("Statement") or []
@@ -554,7 +555,7 @@ class _SnsSubscription:
         logger.debug(f"Set permissions on SNS topic '{topic_arn}'")
 
     @staticmethod
-    def _get_exisiting_queue_policy(sqs_client, queue_name: str, queue_url: str) -> dict:
+    def _get_existing_queue_policy(sqs_client, queue_name: str, queue_url: str) -> dict:
         """Retrieves the existing SQS queue policy.
 
         We retrieve the existing policy so that we can add a statement for the SNS topic
@@ -616,7 +617,7 @@ class _SnsSubscription:
 
         return invalid_subscription_arns
 
-    def _filter_sns_subscription_response(self, subscriptions: list[dict]) -> list[str]:
+    def _filter_sns_subscription_response(self, subscriptions: list[dict] | None) -> list[str]:
         """Returns a list of SNS subscription ARNs that are not associated with a SQS queue.
 
         :param subscriptions: A list of subscriptions for an SNS topic

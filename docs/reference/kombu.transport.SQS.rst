@@ -105,7 +105,7 @@ For more information, refer to the AWS documentation on Fair Queues: https://doc
 
 
 Amazon SQS Transport - ``kombu.transport.SQS.exceptions``
-================================================
+=========================================================
 
 .. automodule:: kombu.transport.SQS.exceptions
    :members:
@@ -114,7 +114,7 @@ Amazon SQS Transport - ``kombu.transport.SQS.exceptions``
 
 
 Amazon SQS Transport - ``kombu.transport.SQS.SNS``
-================================================
+==================================================
 
 .. automodule:: kombu.transport.SQS.SNS
    :members:
