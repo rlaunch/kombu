@@ -171,7 +171,7 @@ class SNS:
         response = self.get_client().create_topic(
             Name=topic_name,
             Attributes={
-                "FifoTopic": str(topic_name.endswith(".fifo")),
+                "FifoTopic": "true" if topic_name.endswith(".fifo") else "false",
             },
             Tags=[
                 {"Key": "ManagedBy", "Value": "Celery/Kombu"},
@@ -510,7 +510,8 @@ class _SnsSubscription:
         new_policy = copy.deepcopy(existing_policy)
 
         new_policy.setdefault("Version", "2012-10-17")
-        statements = new_policy.get("Statement") or []
+        existing_statements = new_policy.get("Statement") or []
+        statements = list(existing_statements)
 
         kombu_statement = {
             "Sid":       "KombuManaged",
