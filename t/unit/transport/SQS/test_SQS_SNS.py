@@ -248,7 +248,7 @@ class test_SNS:
         assert mock_client.create_topic.call_args_list == [
             call(
                 Name="my-new-topic",
-                Attributes={"FifoTopic": "False"},
+                Attributes={"FifoTopic": "false"},
                 Tags=[
                     {"Key": "ManagedBy", "Value": "Celery/Kombu"},
                     {
@@ -296,7 +296,7 @@ class test_SNS:
         assert mock_client.create_topic.call_args_list == [
             call(
                 Name="test_topic.fifo",
-                Attributes={"FifoTopic": "True"},
+                Attributes={"FifoTopic": "true"},
                 Tags=[
                     {"Key": "ManagedBy", "Value": "Celery/Kombu"},
                     {
