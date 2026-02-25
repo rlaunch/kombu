@@ -170,7 +170,7 @@ class SNS:
         response = self.get_client().create_topic(
             Name=topic_name,
             Attributes={
-                "FifoTopic": str(topic_name.endswith(".fifo")),
+                "FifoTopic": "true" if topic_name.endswith(".fifo") else "false",
             },
             Tags=[
                 {"Key": "ManagedBy", "Value": "Celery/Kombu"},
