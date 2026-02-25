@@ -17,7 +17,8 @@ from botocore.exceptions import ClientError
 from kombu.exceptions import KombuError
 from kombu.log import get_logger
 
-from .exceptions import UndefinedExchangeException
+from .exceptions import (UnableToSubscribeQueueToTopicException,
+                         UndefinedExchangeException)
 
 # pragma: no branch
 if TYPE_CHECKING:
@@ -52,13 +53,13 @@ class SNS:
         :param exchange_name: The name of the exchange.
         :returns: None
         """
-        # Clear any old subscriptions
-        self.subscriptions.cleanup(exchange_name)
-
         with self._lock:
             # If topic has already been initialised, then do nothing
             if self._topic_arn_cache.get(exchange_name):
                 return None
+
+            # Clear any old subscriptions
+            self.subscriptions.cleanup(exchange_name)
 
             # If predefined_exchanges are set, then do not try to create an SNS topic
             if self.channel.predefined_exchanges:
@@ -458,7 +459,7 @@ class _SnsSubscription:
             ReturnSubscriptionArn=True,
         )
         if (status_code := response["ResponseMetadata"]["HTTPStatusCode"]) != 200:
-            raise Exception(f"Unable to subscribe queue: status code was {status_code}")
+            raise UnableToSubscribeQueueToTopicException(f"Unable to subscribe queue: status code was {status_code}")
 
         # Extract the subscription ARN from the response and log
         subscription_arn = response["SubscriptionArn"]
@@ -482,39 +483,33 @@ class _SnsSubscription:
         sqs_client = self.sns.channel.sqs()
         queue_url = self.sns.channel._resolve_queue_url(queue_name)
 
-        # Retrieve existing policy so we don't overwrite user-managed statements.
-        policy_doc: dict
-        try:
-            attrs = sqs_client.get_queue_attributes(
-                QueueUrl=queue_url,
-                AttributeNames=["Policy"],
-            ).get("Attributes", {})
-            existing_policy = attrs.get("Policy")
-            if existing_policy:
-                try:
-                    policy_doc = json.loads(existing_policy)
-                except (TypeError, ValueError):
-                    # Fall back to a fresh policy if the existing one is malformed.
-                    policy_doc = {}
-            else:
-                policy_doc = {}
-        except ClientError as exc:
-            # If we cannot retrieve the existing policy, log and start with a fresh one.
-            logger.warning(
-                "Unable to retrieve existing SQS policy for queue '%s': %s",
-                queue_name,
-                exc,
-            )
-            policy_doc = {}
+        existing_policy = self._get_exisiting_queue_policy(sqs_client, queue_name, queue_url)
+        new_policy = self._generate_new_sqs_policy(existing_policy, topic_arn, queue_arn)
 
-        # Ensure required top-level keys.
-        if not isinstance(policy_doc, dict):
-            policy_doc = {}
-        policy_doc.setdefault("Version", "2012-10-17")
+        self._set_policy_on_sqs_queue(
+            sqs_client=sqs_client,
+            queue_url=queue_url,
+            policy=new_policy,
+            topic_arn=topic_arn
+        )
 
-        statements = policy_doc.get("Statement") or []
-        if not isinstance(statements, list):
-            statements = [statements]
+    @staticmethod
+    def _generate_new_sqs_policy(existing_policy: dict, topic_arn: str, queue_arn: str) -> dict:
+        """Adds a statement to the existing SQS queue policy to allow the SNS topic to publish to the queue.
+
+        This method checks to see if there is an existing Kombu-managed statement in the policy,
+        and if so, it updates the statement with the new topic ARN.
+        If not, it adds a new statement to the policy.
+
+        :param existing_policy: The existing SQS queue policy
+        :param topic_arn: The ARN of the SNS topic
+        :param queue_arn: The ARN of the SQS queue
+        :return: The updated policy with the new statement added
+        """
+        new_policy = existing_policy.copy()
+
+        new_policy.setdefault("Version", "2012-10-17")
+        statements = new_policy.get("Statement") or []
 
         kombu_statement = {
             "Sid":       "KombuManaged",
@@ -525,7 +520,7 @@ class _SnsSubscription:
             "Condition": {"ArnLike": {"aws:SourceArn": topic_arn}},
         }
 
-        # Upsert the Kombu-managed statement by Sid.
+        # Update existing Kombu-managed statement if found
         updated = False
         for index, stmt in enumerate(statements):
             if isinstance(stmt, dict) and stmt.get("Sid") == "KombuManaged":
@@ -533,18 +528,64 @@ class _SnsSubscription:
                 updated = True
                 break
 
+        # If no existing Kombu-managed statement was found, add a new one
         if not updated:
             statements.append(kombu_statement)
 
-        policy_doc["Statement"] = statements
+        new_policy["Statement"] = statements
+        return new_policy
 
+    @staticmethod
+    def _set_policy_on_sqs_queue(sqs_client, queue_url: str, policy: dict, topic_arn: str) -> None:
+        """Sets the given policy on the SQS queue.
+
+        :param sqs_client: The SQS client to use for setting the queue attributes
+        :param queue_url: The URL of the SQS queue to set the policy on
+        :param policy: The policy to set on the SQS queue
+        :param topic_arn: The ARN of the SNS topic (used for logging)
+        :return: None
+        """
         sqs_client.set_queue_attributes(
             QueueUrl=queue_url,
             Attributes={
-                "Policy": json.dumps(policy_doc),
+                "Policy": json.dumps(policy),
             },
         )
         logger.debug(f"Set permissions on SNS topic '{topic_arn}'")
+
+    @staticmethod
+    def _get_exisiting_queue_policy(sqs_client, queue_name: str, queue_url: str) -> dict:
+        """Retrieves the existing SQS queue policy.
+
+        We retrieve the existing policy so that we can add a statement for the SNS topic
+        without overwriting any existing statements that may be required for other integrations.
+
+        :param sqs_client: The SQS client to use for retrieving the queue attributes
+        :param queue_name: The name of the SQS queue
+        :param queue_url: The URL of the SQS queue
+        :return: The existing queue policy as a dictionary, or an empty dictionary if the policy cannot be retrieved
+        """
+        try:
+            attrs = sqs_client.get_queue_attributes(
+                QueueUrl=queue_url,
+                AttributeNames=["Policy"],
+            ).get("Attributes", {})
+            if existing_policy := attrs.get("Policy"):
+                parsed_policy = json.loads(existing_policy)
+                if isinstance(parsed_policy, dict):
+                    return parsed_policy
+
+        except (TypeError, ValueError) as e:
+            # Fall back to a fresh policy if the existing one is malformed.
+            logger.warning(
+                f"Existing SQS policy for queue '{queue_name}' is malformed: {e}"
+            )
+        except ClientError as e:
+            # If we cannot retrieve the existing policy, log and start with a fresh one.
+            logger.warning(
+                f"Unable to retrieve existing SQS policy for queue '{queue_name}': {e}"
+            )
+        return {}
 
     def _unsubscribe_sns_subscription(self, subscription_arn: str) -> None:
         """Unsubscribes a subscription from an AWS SNS topic.

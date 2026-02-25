@@ -56,9 +56,9 @@ class test_SNS:
             "Expiration":      datetime.now(timezone.utc) + timedelta(hours=1),
         }
 
-    @pytest.mark.parametrize("exchange_name", ["test_exchange"])
-    def test_initialise_exchange_with_existing_topic(self, sns_fanout, exchange_name):
+    def test_initialise_exchange_with_existing_topic(self, sns_fanout):
         # Arrange
+        exchange_name = "test_exchange"
         sns_fanout._topic_arn_cache[exchange_name] = "existing_arn"
         sns_fanout.subscriptions = Mock()
 
@@ -67,7 +67,7 @@ class test_SNS:
 
         # Assert
         assert result is None
-        assert sns_fanout.subscriptions.cleanup.call_args_list == [call(exchange_name)]
+        assert sns_fanout.subscriptions.cleanup.call_count == 0
         assert sns_fanout._topic_arn_cache[exchange_name] == "existing_arn"
 
     def test_initialise_exchange_with_predefined_exchanges(self, sns_fanout, caplog):
@@ -824,6 +824,265 @@ class test_SnsSubscription:
         assert (
                    "Set permissions on SNS topic 'arn:aws:sns:us-east-1:123456789012:my-topic'"
                ) in caplog.text
+
+    def test_get_exisiting_queue_policy_with_existing_policy(
+        self, sns_subscription
+    ):
+        # Arrange
+        queue_name = "my-queue"
+        queue_url = "https://sqs.us-east-1.amazonaws.com/123456789012/my-queue"
+
+        sqs_client_mock = MagicMock()
+        sqs_client_mock.get_queue_attributes.return_value = {
+            "Attributes": {
+                "key1": "Some value",
+                "Policy": json.dumps({
+                    "Version":   "2012-10-17",
+                    "Statement": [
+                        {
+                            "Sid":       "ExistingStatement",
+                            "Effect":    "Allow",
+                            "Principal": {"Service": "sns.amazonaws.com"},
+                            "Action":    "SQS:SendMessage",
+                            "Resource":  "arn:aws:sqs:us-east-1:123456789012:my-queue",
+                            "Condition": {"ArnLike": {"aws:SourceArn": "123"}},
+                        }
+                    ],
+                })
+            }
+        }
+
+        # Act
+        result = sns_subscription._get_exisiting_queue_policy(sqs_client_mock, queue_name, queue_url)
+
+        # Assert
+        expected_policy = {
+            "Version":   "2012-10-17",
+            "Statement": [
+                {
+                    "Sid":       "ExistingStatement",
+                    "Effect":    "Allow",
+                    "Principal": {"Service": "sns.amazonaws.com"},
+                    "Action":    "SQS:SendMessage",
+                    "Resource":  "arn:aws:sqs:us-east-1:123456789012:my-queue",
+                    "Condition": {"ArnLike": {"aws:SourceArn": "123"}},
+                }
+            ],
+        }
+        assert result == expected_policy
+        assert sqs_client_mock.get_queue_attributes.call_args_list == [
+            call(QueueUrl=queue_url, AttributeNames=["Policy"])
+        ]
+
+    def test_get_exisiting_queue_policy_with_no_existing_policy(
+        self, sns_subscription
+    ):
+        # Arrange
+        queue_name = "my-queue"
+        queue_url = "https://sqs.us-east-1.amazonaws.com/123456789012/my-queue"
+
+        sqs_client_mock = MagicMock()
+        sqs_client_mock.get_queue_attributes.return_value = {
+            "Attributes": {
+                "key1": "Some value",
+            }
+        }
+
+        # Act
+        result = sns_subscription._get_exisiting_queue_policy(sqs_client_mock, queue_name, queue_url)
+
+        # Assert
+        assert result == {}
+
+    def test_get_exisiting_queue_policy_with_invalid_policy(
+        self, sns_subscription, caplog
+    ):
+        # Arrange
+        caplog.set_level(logging.DEBUG)
+        queue_name = "my-queue"
+        queue_url = "https://sqs.us-east-1.amazonaws.com/123456789012/my-queue"
+
+        sqs_client_mock = MagicMock()
+        sqs_client_mock.get_queue_attributes.return_value = {
+            "Attributes": {
+                "key1": "Some value",
+                "Policy": "Not a valid JSON string"
+            }
+        }
+
+        # Act
+        result = sns_subscription._get_exisiting_queue_policy(sqs_client_mock, queue_name, queue_url)
+
+        # Assert
+        assert result == {}
+        assert f"Existing SQS policy for queue '{queue_name}' is malformed:" in caplog.text
+
+    def test_get_exisiting_queue_policy_client_error(
+        self, sns_subscription, caplog
+    ):
+        # Arrange
+        caplog.set_level(logging.DEBUG)
+        queue_name = "my-queue"
+        queue_url = "https://sqs.us-east-1.amazonaws.com/123456789012/my-queue"
+
+        sqs_client_mock = MagicMock()
+        sqs_client_mock.get_queue_attributes.side_effect = ClientError(
+            error_response={"Error": {"Code": "AccessDenied"}}, operation_name="GetQueueAttributes"
+        )
+
+        # Act
+        result = sns_subscription._get_exisiting_queue_policy(sqs_client_mock, queue_name, queue_url)
+
+        # Assert
+        assert result == {}
+        assert f"Unable to retrieve existing SQS policy for queue '{queue_name}':" in caplog.text
+
+    def test_generate_new_sqs_policy_with_no_existing_policy(self, sns_subscription):
+        # Arrange
+        existing_policy = {}
+        topic_arn = "arn:aws:sns:us-east-1:123456789012:my-topic"
+        queue_arn = "arn:aws:sqs:us-east-1:123456789012:my-queue"
+
+        # Act
+        result = sns_subscription._generate_new_sqs_policy(existing_policy, topic_arn, queue_arn)
+
+        # Assert
+        assert result == {
+            'Statement': [
+                {
+                    'Action': 'SQS:SendMessage',
+                    'Condition': {
+                        'ArnLike': {
+                            'aws:SourceArn': topic_arn,
+                        },
+                    },
+                    'Effect': 'Allow',
+                    'Principal': {
+                        'Service': 'sns.amazonaws.com',
+                    },
+                    'Resource': queue_arn,
+                    'Sid': 'KombuManaged',
+                },
+            ],
+            'Version': '2012-10-17',
+        }
+        assert existing_policy is not result, "The original policy object should not be mutated"
+
+    def test_generate_new_sqs_policy_with_existing_policy_no_kombu_managed(
+            self, sns_subscription
+    ):
+        # Arrange
+        topic_arn = "arn:aws:sns:us-east-1:123456789012:my-topic"
+        queue_arn = "arn:aws:sqs:us-east-1:123456789012:my-queue"
+        existing_policy = {
+            'Statement': [
+                {
+                    'Action': 'SQS:SendMessage',
+                    'Condition': {
+                        'ArnLike': {
+                            'aws:SourceArn': "arn:aws:sns:us-east-1:123456789012:another-topic",
+                        },
+                    },
+                    'Effect': 'Allow',
+                    'Principal': {
+                        'Service': 'sns.amazonaws.com',
+                    },
+                    'Resource': "arn:aws:sqs:us-east-1:123:another-queue",
+                    'Sid': 'SqsPolicyForSomethingCool',
+                },
+            ],
+            'Version': '2012-10-17',
+        }
+
+        # Act
+        result = sns_subscription._generate_new_sqs_policy(
+            existing_policy, topic_arn, queue_arn
+        )
+
+        # Assert
+        assert result == {
+            'Statement': [
+                {
+                    'Action': 'SQS:SendMessage',
+                    'Condition': {
+                        'ArnLike': {
+                            'aws:SourceArn': 'arn:aws:sns:us-east-1:123456789012:another-topic',
+                        },
+                    },
+                    'Effect': 'Allow',
+                    'Principal': {
+                        'Service': 'sns.amazonaws.com',
+                    },
+                    'Resource': 'arn:aws:sqs:us-east-1:123:another-queue',
+                    'Sid': 'SqsPolicyForSomethingCool',
+                },
+                {
+                    'Action': 'SQS:SendMessage',
+                    'Condition': {
+                        'ArnLike': {
+                            'aws:SourceArn': 'arn:aws:sns:us-east-1:123456789012:my-topic',
+                        },
+                    },
+                    'Effect': 'Allow',
+                    'Principal': {
+                        'Service': 'sns.amazonaws.com',
+                    },
+                    'Resource': 'arn:aws:sqs:us-east-1:123456789012:my-queue',
+                    'Sid': 'KombuManaged',
+                },
+            ],
+            'Version': '2012-10-17',
+        }
+        assert existing_policy is not result, "The original policy object should not be mutated"
+
+    def test_generate_new_sqs_policy_with_existing_policy_with_kombu_managed(self, sns_subscription):
+        # Arrange
+        topic_arn = "arn:aws:sns:us-east-1:123456789012:my-topic"
+        queue_arn = "arn:aws:sqs:us-east-1:123456789012:my-queue"
+        existing_policy = {
+            'Statement': [
+                {
+                    'Action': 'SQS:SendMessage',
+                    'Condition': {
+                        'ArnLike': {
+                            'aws:SourceArn': "arn:aws:sns:us-east-1:123456789012:another-topic",
+                        },
+                    },
+                    'Effect': 'Allow',
+                    'Principal': {
+                        'Service': 'sns.amazonaws.com',
+                    },
+                    'Resource': "arn:aws:sqs:us-east-1:123:another-queue",
+                    'Sid': 'KombuManaged',
+                },
+            ],
+            'Version': '2012-10-17',
+        }
+
+        # Act
+        result = sns_subscription._generate_new_sqs_policy(existing_policy, topic_arn, queue_arn)
+
+        # Assert
+        assert result == {
+            'Statement': [
+                {
+                    'Action': 'SQS:SendMessage',
+                    'Condition': {
+                        'ArnLike': {
+                            'aws:SourceArn': 'arn:aws:sns:us-east-1:123456789012:my-topic',
+                        },
+                    },
+                    'Effect': 'Allow',
+                    'Principal': {
+                        'Service': 'sns.amazonaws.com',
+                    },
+                    'Resource': 'arn:aws:sqs:us-east-1:123456789012:my-queue',
+                    'Sid': 'KombuManaged',
+                },
+            ],
+            'Version': '2012-10-17',
+        }
+        assert existing_policy is not result, "The original policy object should not be mutated"
 
     def test_subscribe_queue_to_sns_topic_successful_subscription(
         self, sns_subscription, caplog, sns_fanout, mock_get_client

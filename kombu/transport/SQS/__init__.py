@@ -185,6 +185,7 @@ from kombu.asynchronous.aws.sqs.connection import AsyncSQSConnection
 from kombu.asynchronous.aws.sqs.message import AsyncMessage
 from kombu.log import get_logger
 from kombu.transport import virtual
+from kombu.transport.SQS.SNS import SNS
 from kombu.transport.SQS.exceptions import (AccessDeniedQueueException,
                                             DoesNotExistQueueException,
                                             InvalidQueueException,
@@ -194,7 +195,6 @@ from kombu.utils.encoding import bytes_to_str, safe_str
 from kombu.utils.json import dumps, loads
 from kombu.utils.objects import cached_property
 
-from .SNS import SNS
 
 logger = get_logger(__name__)
 
@@ -335,7 +335,7 @@ class Channel(virtual.Channel):
             queue_name = url.split('/')[-1]
             self._queue_cache[queue_name] = url
 
-    def basic_consume(self, queue, no_ack, callback, consumer_tag, **kwargs):
+    def basic_consume(self, queue, no_ack, callback, consumer_tag, *args, **kwargs):
         # If using a Fanout exchange, then subscribe to the queue to SNS
         self._subscribe_queue_to_fanout_exchange_if_required(queue)
 

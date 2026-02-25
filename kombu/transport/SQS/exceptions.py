@@ -27,3 +27,7 @@ class AccessDeniedQueueException(KombuError):
 
 class DoesNotExistQueueException(KombuError):
     """The specified queue doesn't exist."""
+
+
+class UnableToSubscribeQueueToTopicException(KombuError):
+    """Raised when unable to subscribe a queue to an SNS topic."""
