@@ -185,16 +185,15 @@ from kombu.asynchronous.aws.sqs.connection import AsyncSQSConnection
 from kombu.asynchronous.aws.sqs.message import AsyncMessage
 from kombu.log import get_logger
 from kombu.transport import virtual
-from kombu.transport.SQS.SNS import SNS
 from kombu.transport.SQS.exceptions import (AccessDeniedQueueException,
                                             DoesNotExistQueueException,
                                             InvalidQueueException,
                                             UndefinedQueueException)
+from kombu.transport.SQS.SNS import SNS
 from kombu.utils import scheduling
 from kombu.utils.encoding import bytes_to_str, safe_str
 from kombu.utils.json import dumps, loads
 from kombu.utils.objects import cached_property
-
 
 logger = get_logger(__name__)
 
