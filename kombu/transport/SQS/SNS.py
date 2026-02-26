@@ -494,8 +494,7 @@ class _SnsSubscription:
             topic_arn=topic_arn
         )
 
-    @staticmethod
-    def _generate_new_sqs_policy(existing_policy: dict, topic_arn: str, queue_arn: str) -> dict:
+    def _generate_new_sqs_policy(self, existing_policy: dict, topic_arn: str, queue_arn: str) -> dict:
         """Adds a statement to the existing SQS queue policy to allow the SNS topic to publish to the queue.
 
         This method checks to see if there is an existing Kombu-managed statement in the policy,
@@ -510,8 +509,7 @@ class _SnsSubscription:
         new_policy = copy.deepcopy(existing_policy)
 
         new_policy.setdefault("Version", "2012-10-17")
-        existing_statements = new_policy.get("Statement") or []
-        statements = list(existing_statements)
+        statements = self._extract_statements_from_policy(new_policy)
 
         kombu_statement = {
             "Sid":       "KombuManaged",
@@ -536,6 +534,24 @@ class _SnsSubscription:
 
         new_policy["Statement"] = statements
         return new_policy
+
+    @staticmethod
+    def _extract_statements_from_policy(policy: dict) -> list[dict]:
+        """Extracts the statements from an SQS queue policy.
+
+        :param policy: The SQS queue policy to extract the statements from
+        :return: A list of statements from the policy, or an empty list if there are no statements
+        """
+        if not policy or not isinstance(policy, dict):
+            return []
+
+        statements = policy.get("Statement")
+        if isinstance(statements, list):
+            return statements
+        elif isinstance(statements, dict):
+            return [statements]
+        else:
+            return []
 
     @staticmethod
     def _set_policy_on_sqs_queue(sqs_client, queue_url: str, policy: dict, topic_arn: str) -> None:

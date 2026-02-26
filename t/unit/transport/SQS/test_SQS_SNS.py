@@ -1084,6 +1084,25 @@ class test_SnsSubscription:
         }
         assert existing_policy is not result, "The original policy object should not be mutated"
 
+    @pytest.mark.parametrize("policy, expected_statements", [
+        (None, []),
+        ([], []),
+        ({}, []),
+        ({"Version": "2012-10-17"}, []),
+        ({"Statement": []}, []),
+        (
+            {"Statement": [{"PolicyName": "Policy1"}, {"PolicyName": "Policy2"}]},
+            [{"PolicyName": "Policy1"}, {"PolicyName": "Policy2"}]
+        ),
+        ({"Statement": {"PolicyName": "AStatementAsADict"}}, [{"PolicyName": "AStatementAsADict"}])
+    ])
+    def test_extract_statements_from_policy(self, sns_subscription, policy, expected_statements):
+        # Act
+        result = sns_subscription._extract_statements_from_policy(policy)
+
+        # Assert
+        assert result == expected_statements
+
     def test_subscribe_queue_to_sns_topic_successful_subscription(
         self, sns_subscription, caplog, sns_fanout, mock_get_client
     ):
