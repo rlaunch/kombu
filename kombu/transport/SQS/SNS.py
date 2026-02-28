@@ -125,11 +125,14 @@ class SNS:
         if self.channel.predefined_exchanges:
             return self._handle_getting_topic_arn_for_predefined_exchanges(exchange_name)
 
-        # If predefined_caches are not used, then create a new SNS topic/retrieve the ARN from AWS SNS and cache it
+        # If predefined_exchanges are not used, then create a new SNS topic/retrieve the ARN from AWS SNS and cache it
         with self._lock:
-            arn = self._topic_arn_cache[exchange_name] = self._create_sns_topic(
-                exchange_name
-            )
+            # Re-check the cache after acquiring the lock to avoid redundant topic creation
+            if topic_arn := self._topic_arn_cache.get(exchange_name):
+                return topic_arn
+
+            arn = self._create_sns_topic(exchange_name)
+            self._topic_arn_cache[exchange_name] = arn
             return arn
 
     def _handle_getting_topic_arn_for_predefined_exchanges(self, exchange_name: str) -> str:
