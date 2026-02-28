@@ -697,7 +697,7 @@ class _SnsSubscription:
         :return: The attributes of the queue
         :raises: KombuError if the attributes cannot be retrieved
         """
-        response = self.sns.channel.sqs().get_queue_attributes(
+        response = self.sns.channel.sqs(queue=queue_name).get_queue_attributes(
                 QueueUrl=queue_url, AttributeNames=["QueueArn"]
             )
         if (status_code := response["ResponseMetadata"]["HTTPStatusCode"]) == 200:
