@@ -481,7 +481,7 @@ class _SnsSubscription:
         :param queue_arn: The ARN of the SQS queue
         :return: None
         """
-        sqs_client = self.sns.channel.sqs()
+        sqs_client = self.sns.channel.sqs(queue=queue_name)
         queue_url = self.sns.channel._resolve_queue_url(queue_name)
 
         existing_policy = self._get_existing_queue_policy(sqs_client, queue_name, queue_url)
