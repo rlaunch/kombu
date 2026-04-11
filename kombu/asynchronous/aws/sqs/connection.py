@@ -134,7 +134,11 @@ class AsyncSQSConnection(AsyncAWSQueryConnection):
         return self._mexe(prepared_request, callback=callback)
 
     @staticmethod
-    def _build_make_request_params(params: dict | None, protocol_params: dict | None, protocol: str | None) -> dict:
+    def _build_make_request_params(
+        params: dict | None,
+        protocol_params: dict | None,
+        protocol: str | None,
+    ) -> dict:
         """Build the parameters for the make_request call.
 
         This method safely builds the request parameters, and correctly handles when parameters are not set.
