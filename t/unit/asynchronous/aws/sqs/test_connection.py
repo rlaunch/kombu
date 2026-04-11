@@ -743,7 +743,9 @@ class test_AsyncSQSConnection(AWSCase):
             ),
         ],
     )
-    def test_make_request_parameters_are_handled_correctly(self, params, protocol_params, protocol, expected_result):
+    def test_make_request_parameters_are_handled_correctly(
+        self, params, protocol_params, protocol, expected_result,
+    ):
         result = self.x._build_make_request_params(params, protocol_params, protocol)
 
         assert result == expected_result
