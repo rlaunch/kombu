@@ -8,7 +8,7 @@ import pytest
 import kombu
 import kombu.asynchronous
 
-from .common import (BaseExchangeTypes, BaseMessage, BasicFunctionality)
+from .common import BaseExchangeTypes, BaseMessage, BasicFunctionality
 
 
 def get_connection(hostname, port):
