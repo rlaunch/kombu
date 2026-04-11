@@ -8,7 +8,7 @@
 		"ghcr.io/devcontainers/features/python:1": {},
 		"ghcr.io/devcontainers-extra/features/flake8:2": {}
 	},
-	"postCreateCommand": "./.devcontainer/postCreate.sh",
+	"postCreateCommand": "bash ./.devcontainer/postCreate.sh",
 	"customizations": {
 		"vscode": {
 			"extensions": [
