@@ -710,37 +710,38 @@ class test_AsyncSQSConnection(AWSCase):
         }
 
     @pytest.mark.parametrize(
-            "params, protocol_params, protocol, expected_result", [
-                (
-                    {'foo': 'bar'},
-                    {'json': {'baz': 'qux'}},
-                    'json',
-                    {
-                        'foo': 'bar',
-                        'baz': 'qux',
-                    }
-                ),
-                (
-                    None,
-                    {'json': {'baz': 'qux'}},
-                    'json',
-                    {
-                        'baz': 'qux',
-                    }
-                ),
-                (
-                    None,
-                    {'json': {'baz': 'qux'}},
-                    'xml',
-                    {}
-                ),
-                (
-                    None,
-                    None,
-                    "json",
-                    {}
-                )
-            ]
+        "params, protocol_params, protocol, expected_result",
+        [
+            (
+                {'foo': 'bar'},
+                {'json': {'baz': 'qux'}},
+                'json',
+                {
+                    'foo': 'bar',
+                    'baz': 'qux',
+                },
+            ),
+            (
+                None,
+                {'json': {'baz': 'qux'}},
+                'json',
+                {
+                    'baz': 'qux',
+                },
+            ),
+            (
+                None,
+                {'json': {'baz': 'qux'}},
+                'xml',
+                {},
+            ),
+            (
+                None,
+                None,
+                "json",
+                {},
+            ),
+        ],
     )
     def test_make_request_parameters_are_handled_correctly(self, params, protocol_params, protocol, expected_result):
         result = self.x._build_make_request_params(params, protocol_params, protocol)
